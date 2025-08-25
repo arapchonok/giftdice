@@ -11,6 +11,7 @@ STATE = {
     "players": {},
     "rolls": {},
     "winner": None,
+    "pot": 0.0,
     "log": []
 }
 
@@ -54,23 +55,21 @@ class Handler(SimpleHTTPRequestHandler):
         if p == "/api/join":
             uid = int(data.get("user_id", 0))
             uname = str(data.get("username") or f"user_{uid}")
-            dev = bool(data.get("dev", False))
+            stake = float(data.get("stake", 1.0))
 
             if uid <= 0:
                 return self._json(400, {"error": "user_id required"})
-
-            # Разрешаем только Telegram-пользователей, кроме явного dev-режима
-            # (В реальном Telegram user_id может быть любым положительным int; тут просто отсечём "мусор".
-            #  Гостям позволим заходить только если dev=True.)
-            if not dev and uname.startswith("guest_"):
-                return self._json(400, {"error": "Open via Telegram bot button"})
+            if stake <= 0:
+                return self._json(400, {"error": "stake must be positive"})
 
             if STATE["status"] != "collecting":
                 return self._json(400, {"error": "round is not collecting"})
 
             if uid not in STATE["players"]:
-                STATE["players"][uid] = {"id": uid, "username": uname, "stake": 1.0, "dice": pick_dice(1.0)}
-                STATE["log"].append(f"{ts()} JOIN {uname} ({uid}) dice={STATE['players'][uid]['dice']}")
+                dice = pick_dice(stake)
+                STATE["players"][uid] = {"id": uid, "username": uname, "stake": stake, "dice": dice}
+                STATE["pot"] += stake
+                STATE["log"].append(f"{ts()} JOIN {uname} ({uid}) stake={stake} dice={dice}")
             return self._json(200, self._public_state())
 
         if p == "/api/lock":
@@ -101,7 +100,8 @@ class Handler(SimpleHTTPRequestHandler):
             if len(winners) == 1:
                 STATE["status"] = "finished"
                 STATE["winner"] = int(winners[0])
-                STATE["log"].append(f"{ts()} REVEAL seed={STATE['seed']} winner={STATE['winner']} val={maxv}")
+                STATE["log"].append(f"{ts()} REVEAL seed={STATE['seed']} winner={STATE['winner']} val={maxv} pot={STATE['pot']}")
+                STATE["pot"] = 0.0
             else:
                 STATE["log"].append(f"{ts()} TIE on {maxv} among {winners}")
             return self._json(200, self._public_state())
@@ -121,6 +121,7 @@ class Handler(SimpleHTTPRequestHandler):
             "players": list(STATE["players"].values()),
             "rolls": STATE["rolls"],
             "winner": STATE["winner"],
+            "pot": STATE["pot"],
             "log": STATE["log"][-20:]
         }
 
@@ -132,6 +133,7 @@ class Handler(SimpleHTTPRequestHandler):
         STATE["players"].clear()
         STATE["rolls"].clear()
         STATE["winner"] = None
+        STATE["pot"] = 0.0
         STATE["log"].append(f"{ts()} RESET to round {STATE['round_id']}")
 
     def _json(self, code, obj):

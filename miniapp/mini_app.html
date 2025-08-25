@@ -15,6 +15,14 @@
     #players li { margin:4px 0; }
     #log { margin-top:10px; padding:8px; background:#f7f7f7; border:1px solid #eee; border-radius:8px; max-height:180px; overflow:auto; }
     .card { border:1px solid #eee; border-radius:12px; padding:12px; }
+    #dice { width:50px; height:50px; position:relative; margin:20px auto; transform-style:preserve-3d; transition:transform 1s; }
+    #dice div { position:absolute; width:50px; height:50px; background:#fff; border:1px solid #ccc; line-height:50px; text-align:center; font-weight:bold; }
+    #dice .face1 { transform:rotateY(0deg) translateZ(25px); }
+    #dice .face2 { transform:rotateY(90deg) translateZ(25px); }
+    #dice .face3 { transform:rotateY(180deg) translateZ(25px); }
+    #dice .face4 { transform:rotateY(-90deg) translateZ(25px); }
+    #dice .face5 { transform:rotateX(90deg) translateZ(25px); }
+    #dice .face6 { transform:rotateX(-90deg) translateZ(25px); }
   </style>
 </head>
 <body>
@@ -27,10 +35,19 @@
   <div class="card">
     <div id="status">Загрузка…</div>
     <div class="row">
+      <input id="stake" type="number" min="1" value="1" placeholder="Ставка" />
       <button id="btn-join">Войти в раунд</button>
       <button id="btn-lock">Закрыть набор</button>
       <button id="btn-roll">Бросить кубики</button>
       <button id="btn-reset">Сброс</button>
+    </div>
+    <div id="dice" style="display:none">
+      <div class="face1">1</div>
+      <div class="face2">2</div>
+      <div class="face3">3</div>
+      <div class="face4">4</div>
+      <div class="face5">5</div>
+      <div class="face6">6</div>
     </div>
     <h3>Игроки</h3>
     <ul id="players"></ul>
@@ -45,12 +62,12 @@ const $log = document.getElementById('log');
 const $status = document.getElementById('status');
 const $avatar = document.getElementById('avatar');
 const $username = document.getElementById('username');
-
-// dev-режим включается только параметром ?dev=1
-const isDev = new URLSearchParams(location.search).get('dev') === '1';
+const $stake = document.getElementById('stake');
+const $dice = document.getElementById('dice');
+let myId = null;
 
 function tgUserStrict() {
-  // 1) пробуем взять реального пользователя из Telegram Mini App
+  // пробуем взять реального пользователя из Telegram Mini App
   try {
     const tg = window.Telegram?.WebApp;
     const u = tg?.initDataUnsafe?.user;
@@ -65,14 +82,7 @@ function tgUserStrict() {
     }
   } catch(e) {}
 
-  // 2) если это не Telegram – разрешаем только в dev-режиме
-  if (isDev) {
-    let id = localStorage.getItem('demo_uid');
-    if (!id) { id = String(Math.floor(Math.random()*1e9)); localStorage.setItem('demo_uid', id); }
-    return { id: Number(id), username: 'guest_'+id.slice(-4) };
-  }
-
-  // 3) иначе – запрещаем
+  // иначе – запрещаем
   return null;
 }
 
@@ -90,26 +100,31 @@ async function getState() {
 }
 
 function render(state){
-  $status.textContent = `Round ${state.round_id} — ${state.status}` + (state.commit ? ` — commit ${state.commit.slice(0,12)}…` : "");
+  $status.textContent = `Round ${state.round_id} — ${state.status} — Pot ${state.pot}` + (state.commit ? ` — commit ${state.commit.slice(0,12)}…` : "");
   $players.innerHTML = "";
   state.players.forEach(p=>{
     const r = state.rolls[String(p.id)];
     const li = document.createElement('li');
-    li.textContent = `${p.username} — ${p.dice}` + (r ? ` → ${r}` : "");
+    li.textContent = `${p.username} — ${p.dice} — ${p.stake}` + (r ? ` → ${r}` : "");
     if (state.winner && state.winner === p.id) li.style.fontWeight = 'bold';
     $players.appendChild(li);
   });
   $log.innerHTML = state.log.map(l=>`<div>${l}</div>`).join('');
+  if (myId && state.rolls[String(myId)]) {
+    $dice.style.display = 'block';
+    showRoll(state.rolls[String(myId)]);
+  }
 }
 
 document.getElementById('btn-join').onclick = async ()=>{
   const u = tgUserStrict();
   if (!u) {
-    alert('Откройте игру через кнопку бота в Telegram. (Для разработки можно открыть в браузере с ?dev=1)');
+    alert('Откройте игру через кнопку бота в Telegram.');
     return;
   }
   const display = u.username || [u.first_name, u.last_name].filter(Boolean).join(' ') || 'user';
-  const body = { user_id: u.id, username: display, dev: isDev };
+  const body = { user_id: u.id, username: display, stake: Number($stake.value)||1 };
+  myId = u.id;
   const r = await api('/api/join', body);
   if (r.error) alert(r.error);
   render(await getState());
@@ -144,8 +159,21 @@ window.addEventListener('load', async ()=>{
     if (u.photo_url) {
       $avatar.src = u.photo_url; $avatar.style.display = 'block';
     }
+    myId = u.id;
   }
 });
+
+function showRoll(n){
+  const rot = {
+    1: 'rotateX(0deg) rotateY(0deg)',
+    2: 'rotateX(0deg) rotateY(-90deg)',
+    3: 'rotateX(0deg) rotateY(180deg)',
+    4: 'rotateX(0deg) rotateY(90deg)',
+    5: 'rotateX(-90deg) rotateY(0deg)',
+    6: 'rotateX(90deg) rotateY(0deg)'
+  };
+  $dice.style.transform = rot[n] || rot[1];
+}
 </script>
 
 </body>
