@@ -8,6 +8,8 @@
     body { font-family: system-ui, Arial, sans-serif; margin: 16px; }
     header { display:flex; align-items:center; gap:12px; }
     h2 { margin: 0 0 8px 0; }
+    #avatar { width:32px; height:32px; border-radius:50%; object-fit:cover; }
+    #username { font-weight:600; }
     .row { display:flex; gap:12px; flex-wrap:wrap; margin: 12px 0; }
     button { padding:10px 14px; border:1px solid #ddd; border-radius:8px; cursor:pointer; }
     #players li { margin:4px 0; }
@@ -16,7 +18,11 @@
   </style>
 </head>
 <body>
-  <header><h2>Gift Dice — Mini App</h2></header>
+  <header>
+    <h2>Gift Dice — Mini App</h2>
+    <img id="avatar" alt="" style="display:none"/>
+    <span id="username"></span>
+  </header>
 
   <div class="card">
     <div id="status">Загрузка…</div>
@@ -37,6 +43,8 @@ const API_BASE = "";
 const $players = document.getElementById('players');
 const $log = document.getElementById('log');
 const $status = document.getElementById('status');
+const $avatar = document.getElementById('avatar');
+const $username = document.getElementById('username');
 
 // dev-режим включается только параметром ?dev=1
 const isDev = new URLSearchParams(location.search).get('dev') === '1';
@@ -47,7 +55,13 @@ function tgUserStrict() {
     const tg = window.Telegram?.WebApp;
     const u = tg?.initDataUnsafe?.user;
     if (u && u.id) {
-      return { id: Number(u.id), username: (u.username || (u.first_name || "user")) };
+      return {
+        id: Number(u.id),
+        username: u.username || undefined,
+        first_name: u.first_name || undefined,
+        last_name: u.last_name || undefined,
+        photo_url: u.photo_url || undefined
+      };
     }
   } catch(e) {}
 
@@ -94,7 +108,8 @@ document.getElementById('btn-join').onclick = async ()=>{
     alert('Откройте игру через кнопку бота в Telegram. (Для разработки можно открыть в браузере с ?dev=1)');
     return;
   }
-  const body = { user_id: u.id, username: u.username, dev: isDev };
+  const display = u.username || [u.first_name, u.last_name].filter(Boolean).join(' ') || 'user';
+  const body = { user_id: u.id, username: display, dev: isDev };
   const r = await api('/api/join', body);
   if (r.error) alert(r.error);
   render(await getState());
@@ -122,6 +137,14 @@ setInterval(async ()=>{
 window.addEventListener('load', async ()=>{
   render(await getState());
   try { window.Telegram?.WebApp?.ready(); } catch(e){}
+  const u = tgUserStrict();
+  if (u) {
+    const name = u.username || [u.first_name, u.last_name].filter(Boolean).join(' ') || '';
+    if (name) $username.textContent = name;
+    if (u.photo_url) {
+      $avatar.src = u.photo_url; $avatar.style.display = 'block';
+    }
+  }
 });
 </script>
 
