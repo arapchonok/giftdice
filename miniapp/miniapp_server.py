@@ -1,4 +1,4 @@
-import json, hashlib, random, sys
+import json, hashlib, random, sys, os
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 from datetime import datetime
@@ -14,6 +14,8 @@ STATE = {
     "pot": 0.0,
     "log": []
 }
+
+STATE_FILE = os.path.join(os.path.dirname(__file__), "game_state.json")
 
 def sha256(s: str) -> str:
     import hashlib as _h
@@ -34,6 +36,16 @@ def roll_value(seed: str, round_id: int, user_id: int, dice: str, phase: int = 1
 def ts():
     return datetime.utcnow().isoformat(timespec="seconds") + "Z"
 
+def save_state():
+    data = {
+        "players": STATE["players"],
+        "rolls": STATE["rolls"],
+        "winner": STATE["winner"],
+        "log": STATE["log"],
+    }
+    with open(STATE_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
 class Handler(SimpleHTTPRequestHandler):
     def do_OPTIONS(self):
         self._cors(); self.send_response(204); self.end_headers()
@@ -41,6 +53,12 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path.startswith("/api/state"):
             return self._json(200, self._public_state())
+        if self.path in ("/", "/index.html"):
+            ua = self.headers.get("User-Agent", "")
+            if "Mobi" in ua:
+                self.path = "/mini_app.html"
+            else:
+                self.path = "/desktop_app.html"
         return super().do_GET()
 
     def do_POST(self):
@@ -70,6 +88,7 @@ class Handler(SimpleHTTPRequestHandler):
                 STATE["players"][uid] = {"id": uid, "username": uname, "stake": stake, "dice": dice}
                 STATE["pot"] += stake
                 STATE["log"].append(f"{ts()} JOIN {uname} ({uid}) stake={stake} dice={dice}")
+            save_state()
             return self._json(200, self._public_state())
 
         if p == "/api/lock":
@@ -81,6 +100,7 @@ class Handler(SimpleHTTPRequestHandler):
             STATE["seed"] = str(random.randint(1, 10**12))
             STATE["commit"] = sha256(STATE["seed"])
             STATE["log"].append(f"{ts()} LOCK commit={STATE['commit'][:12]}…")
+            save_state()
             return self._json(200, self._public_state())
 
         if p == "/api/roll":
@@ -104,10 +124,12 @@ class Handler(SimpleHTTPRequestHandler):
                 STATE["pot"] = 0.0
             else:
                 STATE["log"].append(f"{ts()} TIE on {maxv} among {winners}")
+            save_state()
             return self._json(200, self._public_state())
 
         if p == "/api/reset":
             self._reset_state()
+            save_state()
             return self._json(200, self._public_state())
 
         return self._json(404, {"error": "not found"})
@@ -149,6 +171,7 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
 
 def main():
+    save_state()
     port = 8081
     if len(sys.argv) >= 2:
         try: port = int(sys.argv[1])

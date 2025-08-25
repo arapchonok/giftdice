@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Gift Dice Desktop</title>
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; margin: 32px; }
+    header { display:flex; align-items:center; gap:12px; }
+    h2 { margin: 0 0 8px 0; }
+    #avatar { width:32px; height:32px; border-radius:50%; object-fit:cover; }
+    #username { font-weight:600; }
+    .row { display:flex; gap:12px; flex-wrap:wrap; margin: 12px 0; }
+    button { padding:10px 14px; border:1px solid #ddd; border-radius:8px; cursor:pointer; }
+    #players li { margin:4px 0; }
+    #log { margin-top:10px; padding:8px; background:#f7f7f7; border:1px solid #eee; border-radius:8px; max-height:180px; overflow:auto; }
+    .card { border:1px solid #eee; border-radius:12px; padding:12px; }
+    #dice { width:50px; height:50px; position:relative; margin:20px auto; transform-style:preserve-3d; transition:transform 1s; }
+    #dice div { position:absolute; width:50px; height:50px; background:#fff; border:1px solid #ccc; line-height:50px; text-align:center; font-weight:bold; }
+    #dice .face1 { transform:rotateY(0deg) translateZ(25px); }
+    #dice .face2 { transform:rotateY(90deg) translateZ(25px); }
+    #dice .face3 { transform:rotateY(180deg) translateZ(25px); }
+    #dice .face4 { transform:rotateY(-90deg) translateZ(25px); }
+    #dice .face5 { transform:rotateX(90deg) translateZ(25px); }
+    #dice .face6 { transform:rotateX(-90deg) translateZ(25px); }
+  </style>
+</head>
+<body>
+  <header>
+    <h2>Gift Dice — Desktop App</h2>
+    <img id="avatar" alt="" style="display:none"/>
+    <span id="username"></span>
+  </header>
+
+  <div class="card">
+    <div id="status">Загрузка…</div>
+    <div class="row">
+      <input id="stake" type="number" min="1" value="1" placeholder="Ставка" />
+      <button id="btn-join">Войти в раунд</button>
+      <button id="btn-lock">Закрыть набор</button>
+      <button id="btn-roll">Бросить кубики</button>
+      <button id="btn-reset">Сброс</button>
+    </div>
+    <div id="dice" style="display:none">
+      <div class="face1">1</div>
+      <div class="face2">2</div>
+      <div class="face3">3</div>
+      <div class="face4">4</div>
+      <div class="face5">5</div>
+      <div class="face6">6</div>
+    </div>
+    <h3>Игроки</h3>
+    <ul id="players"></ul>
+    <h3>Лог</h3>
+    <div id="log"></div>
+  </div>
+
+ <script>
+const API_BASE = "";
+const $players = document.getElementById('players');
+const $log = document.getElementById('log');
+const $status = document.getElementById('status');
+const $avatar = document.getElementById('avatar');
+const $username = document.getElementById('username');
+const $stake = document.getElementById('stake');
+const $dice = document.getElementById('dice');
+let myId = null;
+
+function tgUserStrict() {
+  // пробуем взять реального пользователя из Telegram Mini App
+  try {
+    const tg = window.Telegram?.WebApp;
+    const u = tg?.initDataUnsafe?.user;
+    if (u && u.id) {
+      return {
+        id: Number(u.id),
+        username: u.username || undefined,
+        first_name: u.first_name || undefined,
+        last_name: u.last_name || undefined,
+        photo_url: u.photo_url || undefined
+      };
+    }
+  } catch(e) {}
+
+  // иначе – запрещаем
+  return null;
+}
+
+async function api(path, body) {
+  const res = await fetch((API_BASE + path), {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: body ? JSON.stringify(body) : "{}"
+  });
+  return res.json();
+}
+async function getState() {
+  const res = await fetch('/api/state');
+  return res.json();
+}
+
+function render(state){
+  $status.textContent = `Round ${state.round_id} — ${state.status} — Pot ${state.pot}` + (state.commit ? ` — commit ${state.commit.slice(0,12)}…` : "");
+  $players.innerHTML = "";
+  state.players.forEach(p=>{
+    const r = state.rolls[String(p.id)];
+    const li = document.createElement('li');
+    li.textContent = `${p.username} — ${p.dice} — ${p.stake}` + (r ? ` → ${r}` : "");
+    if (state.winner && state.winner === p.id) li.style.fontWeight = 'bold';
+    $players.appendChild(li);
+  });
+  $log.innerHTML = state.log.map(l=>`<div>${l}</div>`).join('');
+  if (myId && state.rolls[String(myId)]) {
+    $dice.style.display = 'block';
+    showRoll(state.rolls[String(myId)]);
+  }
+}
+
+document.getElementById('btn-join').onclick = async ()=>{
+  const u = tgUserStrict();
+  if (!u) {
+    alert('Откройте игру через кнопку бота в Telegram.');
+    return;
+  }
+  const display = u.username || [u.first_name, u.last_name].filter(Boolean).join(' ') || 'user';
+  const body = { user_id: u.id, username: display, stake: Number($stake.value)||1 };
+  myId = u.id;
+  const r = await api('/api/join', body);
+  if (r.error) alert(r.error);
+  render(await getState());
+};
+document.getElementById('btn-lock').onclick = async ()=>{
+  const r = await api('/api/lock',{});
+  if (r.error) alert(r.error);
+  render(await getState());
+};
+document.getElementById('btn-roll').onclick = async ()=>{
+  const r = await api('/api/roll',{});
+  if (r.error) alert(r.error);
+  render(await getState());
+};
+document.getElementById('btn-reset').onclick = async ()=>{
+  await api('/api/reset',{});
+  render(await getState());
+};
+
+// автообновление
+setInterval(async ()=>{
+  try { render(await getState()); } catch(e){}
+}, 1200);
+
+window.addEventListener('load', async ()=>{
+  render(await getState());
+  try { window.Telegram?.WebApp?.ready(); } catch(e){}
+  const u = tgUserStrict();
+  if (u) {
+    const name = u.username || [u.first_name, u.last_name].filter(Boolean).join(' ') || '';
+    if (name) $username.textContent = name;
+    if (u.photo_url) {
+      $avatar.src = u.photo_url; $avatar.style.display = 'block';
+    }
+    myId = u.id;
+  }
+});
+
+function showRoll(n){
+  const rot = {
+    1: 'rotateX(0deg) rotateY(0deg)',
+    2: 'rotateX(0deg) rotateY(-90deg)',
+    3: 'rotateX(0deg) rotateY(180deg)',
+    4: 'rotateX(0deg) rotateY(90deg)',
+    5: 'rotateX(-90deg) rotateY(0deg)',
+    6: 'rotateX(90deg) rotateY(0deg)'
+  };
+  $dice.style.transform = rot[n] || rot[1];
+}
+</script>
+
+</body>
+</html>
