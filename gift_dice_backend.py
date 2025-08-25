@@ -192,6 +192,12 @@ class BotFlowTests(unittest.TestCase):
         self.bot.handle_update(self._msg(self.u1, "/roll"))
         self.assertIn(self.bot.state, ("rolling","finished"))
 
+class MiniAppServerImportTests(unittest.TestCase):
+    def test_import(self):
+        import importlib
+        m = importlib.import_module('miniapp.miniapp_server')
+        self.assertTrue(hasattr(m, 'Handler'))
+
 # ---------- Entrypoint ----------
 def main():
     parser = argparse.ArgumentParser()
