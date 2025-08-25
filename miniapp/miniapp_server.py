@@ -51,28 +51,27 @@ class Handler(SimpleHTTPRequestHandler):
             data = {}
         p = urlparse(self.path).path
 
-if p == "/api/join":
-    uid = int(data.get("user_id", 0))
-    uname = str(data.get("username") or f"user_{uid}")
-    dev = bool(data.get("dev", False))
+        if p == "/api/join":
+            uid = int(data.get("user_id", 0))
+            uname = str(data.get("username") or f"user_{uid}")
+            dev = bool(data.get("dev", False))
 
-    if uid <= 0:
-        return self._json(400, {"error": "user_id required"})
+            if uid <= 0:
+                return self._json(400, {"error": "user_id required"})
 
-    # Разрешаем только Telegram-пользователей, кроме явного dev-режима
-    # (В реальном Telegram user_id может быть любым положительным int; тут просто отсечём "мусор".
-    #  Гостям позволим заходить только если dev=True.)
-    if not dev and uname.startswith("guest_"):
-        return self._json(400, {"error": "Open via Telegram bot button"})
+            # Разрешаем только Telegram-пользователей, кроме явного dev-режима
+            # (В реальном Telegram user_id может быть любым положительным int; тут просто отсечём "мусор".
+            #  Гостям позволим заходить только если dev=True.)
+            if not dev and uname.startswith("guest_"):
+                return self._json(400, {"error": "Open via Telegram bot button"})
 
-    if STATE["status"] != "collecting":
-        return self._json(400, {"error": "round is not collecting"})
+            if STATE["status"] != "collecting":
+                return self._json(400, {"error": "round is not collecting"})
 
-    if uid not in STATE["players"]:
-        STATE["players"][uid] = {"id": uid, "username": uname, "stake": 1.0, "dice": pick_dice(1.0)}
-        STATE["log"].append(f"{ts()} JOIN {uname} ({uid}) dice={STATE['players'][uid]['dice']}")
-    return self._json(200, self._public_state())
-
+            if uid not in STATE["players"]:
+                STATE["players"][uid] = {"id": uid, "username": uname, "stake": 1.0, "dice": pick_dice(1.0)}
+                STATE["log"].append(f"{ts()} JOIN {uname} ({uid}) dice={STATE['players'][uid]['dice']}")
+            return self._json(200, self._public_state())
 
         if p == "/api/lock":
             if STATE["status"] != "collecting":
@@ -154,11 +153,6 @@ def main():
         except: pass
     httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     print(f"Serving miniapp + API on http://127.0.0.1:{port}")
-    httpd.serve_forever()
-
-if __name__ == "__main__":
-    main()
-
     httpd.serve_forever()
 
 if __name__ == "__main__":
